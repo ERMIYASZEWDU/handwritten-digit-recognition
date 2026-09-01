@@ -12,7 +12,7 @@ st.set_page_config(
     layout="centered",
 )
 
-IMG_SIZE = 32
+IMG_SIZE = 96   # MobileNetV2 input size
 
 
 @st.cache_resource
@@ -22,7 +22,7 @@ def load_model():
 
 
 def otsu_threshold(arr: np.ndarray) -> int:
-    hist = np.bincount(arr.astype(np.uint8).ravel(), minlength=256)
+    hist  = np.bincount(arr.astype(np.uint8).ravel(), minlength=256)
     total = arr.size
     s_tot = float(np.dot(np.arange(256), hist))
     s_bg, w_bg, best, t_best = 0.0, 0, 0.0, 0
@@ -43,46 +43,40 @@ def otsu_threshold(arr: np.ndarray) -> int:
 
 def preprocess(pil_img: Image.Image) -> np.ndarray:
     # 1. Grayscale + denoise
-    pil_img = pil_img.convert("L").filter(ImageFilter.GaussianBlur(radius=1))
-    arr = np.array(pil_img)
+    gray = pil_img.convert("L").filter(ImageFilter.GaussianBlur(radius=1))
+    arr  = np.array(gray)
 
     # 2. Otsu binarisation
     arr = np.where(arr > otsu_threshold(arr), 255, 0).astype(np.uint8)
 
-    # 3. Invert if background is white (digit should be white on black)
+    # 3. Digit = white on black
     if arr.mean() > 128:
         arr = 255 - arr
 
-    # 4. Dilate to close gaps in strokes
-    pil_img = Image.fromarray(arr).filter(ImageFilter.MaxFilter(size=3))
-    arr = np.array(pil_img)
+    # 4. Dilate to close stroke gaps
+    arr = np.array(Image.fromarray(arr).filter(ImageFilter.MaxFilter(size=3)))
 
-    # 5. Crop tightly to the digit bounding box + 10% padding
-    rows = np.any(arr > 0, axis=1)
-    cols = np.any(arr > 0, axis=0)
+    # 5. Crop tightly to bounding box + 10% padding
+    rows, cols = np.any(arr > 0, axis=1), np.any(arr > 0, axis=0)
     if rows.any() and cols.any():
         rmin, rmax = np.where(rows)[0][[0, -1]]
         cmin, cmax = np.where(cols)[0][[0, -1]]
         h, w = arr.shape
-        pad_r = max(1, int((rmax - rmin) * 0.10))
-        pad_c = max(1, int((cmax - cmin) * 0.10))
-        rmin = max(0, rmin - pad_r)
-        rmax = min(h - 1, rmax + pad_r)
-        cmin = max(0, cmin - pad_c)
-        cmax = min(w - 1, cmax + pad_c)
-        arr = arr[rmin:rmax+1, cmin:cmax+1]
+        pr = max(1, int((rmax - rmin) * 0.10))
+        pc = max(1, int((cmax - cmin) * 0.10))
+        arr = arr[max(0, rmin-pr):min(h, rmax+pr+1),
+                  max(0, cmin-pc):min(w, cmax+pc+1)]
 
-    # 6. Resize to model input size with equal padding to keep aspect ratio
-    pil_crop = Image.fromarray(arr)
-    pil_crop.thumbnail((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    # 6. Resize preserving aspect ratio, centre-pad to IMG_SIZE
+    crop   = Image.fromarray(arr)
+    crop.thumbnail((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
     padded = Image.new("L", (IMG_SIZE, IMG_SIZE), 0)
-    offset = ((IMG_SIZE - pil_crop.width) // 2,
-              (IMG_SIZE - pil_crop.height) // 2)
-    padded.paste(pil_crop, offset)
+    padded.paste(crop, ((IMG_SIZE - crop.width)  // 2,
+                        (IMG_SIZE - crop.height) // 2))
 
-    return np.expand_dims(
-        np.array(padded, dtype=np.float32) / 255.0, axis=(0, -1)
-    )
+    # 7. Convert to 3-channel RGB (MobileNetV2 expects 3 channels)
+    rgb = Image.merge("RGB", [padded, padded, padded])
+    return np.expand_dims(np.array(rgb, dtype=np.float32) / 255.0, axis=0)
 
 
 model = load_model()
@@ -94,6 +88,7 @@ uploaded = st.file_uploader("Choose image…", type=["jpg", "jpeg", "png", "bmp"
 
 if uploaded is not None:
     pil_img = Image.open(io.BytesIO(uploaded.read()))
+
     col1, col2 = st.columns(2)
     with col1:
         st.image(pil_img, caption="Uploaded image", use_container_width=True)
@@ -101,11 +96,9 @@ if uploaded is not None:
     proc = preprocess(pil_img)
 
     with col2:
-        st.image(
-            (proc[0].squeeze() * 255).astype(np.uint8),
-            caption="After preprocessing",
-            use_container_width=True,
-        )
+        # Show grayscale version of preprocessed image
+        preview = (proc[0, :, :, 0] * 255).astype(np.uint8)
+        st.image(preview, caption="After preprocessing", use_container_width=True)
 
     with st.spinner("Predicting…"):
         probs = model.predict(proc, verbose=0)[0]
