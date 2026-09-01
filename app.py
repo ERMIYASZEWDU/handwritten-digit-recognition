@@ -4,6 +4,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image, ImageFilter
 import tensorflow as tf
+import keras
 
 st.set_page_config(
     page_title="Digit Recogniser",
@@ -16,8 +17,8 @@ IMG_SIZE = 32
 
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("handwritten_digit_cnn.keras",
-                                      compile=False)
+    return keras.models.load_model("handwritten_digit_cnn.keras",
+                                   compile=False)
 
 
 def otsu_threshold(arr: np.ndarray) -> int:
