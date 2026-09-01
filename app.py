@@ -16,7 +16,8 @@ IMG_SIZE = 32
 
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("handwritten_digit_cnn.keras")
+    return tf.keras.models.load_model("handwritten_digit_cnn.keras",
+                                      compile=False)
 
 
 def otsu_threshold(arr: np.ndarray) -> int:
@@ -59,22 +60,26 @@ st.write("Upload a photo of a handwritten digit (0 – 9).")
 
 uploaded = st.file_uploader("Choose image…", type=["jpg", "jpeg", "png", "bmp"])
 
-if uploaded:
+if uploaded is not None:
     pil_img = Image.open(io.BytesIO(uploaded.read()))
     col1, col2 = st.columns(2)
     with col1:
-        st.image(pil_img, caption="Uploaded image", use_column_width=True)
+        st.image(pil_img, caption="Uploaded image", use_container_width=True)
+
+    proc = preprocess(pil_img)
+
     with col2:
-        proc = preprocess(pil_img)
         st.image(
             (proc[0].squeeze() * 255).astype(np.uint8),
             caption="After preprocessing",
-            use_column_width=True,
+            use_container_width=True,
         )
 
-    probs  = model.predict(proc, verbose=0)[0]
-    digit  = int(np.argmax(probs))
-    conf   = float(probs[digit]) * 100
+    with st.spinner("Predicting…"):
+        probs = model.predict(proc, verbose=0)[0]
+
+    digit = int(np.argmax(probs))
+    conf  = float(probs[digit]) * 100
 
     st.success(f"**Predicted digit: {digit}** — {conf:.1f}% confidence")
 
