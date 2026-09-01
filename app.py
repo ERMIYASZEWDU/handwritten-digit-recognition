@@ -12,7 +12,7 @@ st.set_page_config(
     layout="centered",
 )
 
-IMG_SIZE = 96   # MobileNetV2 input size
+IMG_SIZE = 32   # current model input size (will become 96 after retraining)
 
 
 @st.cache_resource
@@ -67,16 +67,17 @@ def preprocess(pil_img: Image.Image) -> np.ndarray:
         arr = arr[max(0, rmin-pr):min(h, rmax+pr+1),
                   max(0, cmin-pc):min(w, cmax+pc+1)]
 
-    # 6. Resize preserving aspect ratio, centre-pad to IMG_SIZE
+    # 6. Resize preserving aspect ratio, centre-pad — grayscale 32x32
     crop   = Image.fromarray(arr)
     crop.thumbnail((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
     padded = Image.new("L", (IMG_SIZE, IMG_SIZE), 0)
     padded.paste(crop, ((IMG_SIZE - crop.width)  // 2,
                         (IMG_SIZE - crop.height) // 2))
 
-    # 7. Convert to 3-channel RGB (MobileNetV2 expects 3 channels)
-    rgb = Image.merge("RGB", [padded, padded, padded])
-    return np.expand_dims(np.array(rgb, dtype=np.float32) / 255.0, axis=0)
+    # 7. Shape: (1, 32, 32, 1)
+    return np.expand_dims(
+        np.array(padded, dtype=np.float32) / 255.0, axis=(0, -1)
+    )
 
 
 model = load_model()
@@ -96,8 +97,7 @@ if uploaded is not None:
     proc = preprocess(pil_img)
 
     with col2:
-        # Show grayscale version of preprocessed image
-        preview = (proc[0, :, :, 0] * 255).astype(np.uint8)
+        preview = (proc[0].squeeze() * 255).astype(np.uint8)
         st.image(preview, caption="After preprocessing", use_container_width=True)
 
     with st.spinner("Predicting…"):
