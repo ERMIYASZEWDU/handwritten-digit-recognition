@@ -1,0 +1,22 @@
+# Dataset images (large, not needed in repo)
+DA/
+DA.zip
+
+# Trained model weights (large binary files)
+*.keras
+*.h5
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Kiro IDE internal folder
+.freebuff/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS junk
+.DS_Store
+Thumbs.db
