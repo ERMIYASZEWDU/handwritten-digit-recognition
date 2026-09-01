@@ -42,15 +42,46 @@ def otsu_threshold(arr: np.ndarray) -> int:
 
 
 def preprocess(pil_img: Image.Image) -> np.ndarray:
+    # 1. Grayscale + denoise
     pil_img = pil_img.convert("L").filter(ImageFilter.GaussianBlur(radius=1))
     arr = np.array(pil_img)
+
+    # 2. Otsu binarisation
     arr = np.where(arr > otsu_threshold(arr), 255, 0).astype(np.uint8)
+
+    # 3. Invert if background is white (digit should be white on black)
     if arr.mean() > 128:
         arr = 255 - arr
+
+    # 4. Dilate to close gaps in strokes
     pil_img = Image.fromarray(arr).filter(ImageFilter.MaxFilter(size=3))
-    pil_img = pil_img.resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    arr = np.array(pil_img)
+
+    # 5. Crop tightly to the digit bounding box + 10% padding
+    rows = np.any(arr > 0, axis=1)
+    cols = np.any(arr > 0, axis=0)
+    if rows.any() and cols.any():
+        rmin, rmax = np.where(rows)[0][[0, -1]]
+        cmin, cmax = np.where(cols)[0][[0, -1]]
+        h, w = arr.shape
+        pad_r = max(1, int((rmax - rmin) * 0.10))
+        pad_c = max(1, int((cmax - cmin) * 0.10))
+        rmin = max(0, rmin - pad_r)
+        rmax = min(h - 1, rmax + pad_r)
+        cmin = max(0, cmin - pad_c)
+        cmax = min(w - 1, cmax + pad_c)
+        arr = arr[rmin:rmax+1, cmin:cmax+1]
+
+    # 6. Resize to model input size with equal padding to keep aspect ratio
+    pil_crop = Image.fromarray(arr)
+    pil_crop.thumbnail((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    padded = Image.new("L", (IMG_SIZE, IMG_SIZE), 0)
+    offset = ((IMG_SIZE - pil_crop.width) // 2,
+              (IMG_SIZE - pil_crop.height) // 2)
+    padded.paste(pil_crop, offset)
+
     return np.expand_dims(
-        np.array(pil_img, dtype=np.float32) / 255.0, axis=(0, -1)
+        np.array(padded, dtype=np.float32) / 255.0, axis=(0, -1)
     )
 
 
