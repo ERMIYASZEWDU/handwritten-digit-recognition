@@ -2,9 +2,10 @@
 DA/
 DA.zip
 
-# Trained model weights (large binary files)
-*.keras
+# Trained model weights — allow only the deployed model
 *.h5
+best_digit_cnn.keras
+!handwritten_digit_cnn.keras
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
